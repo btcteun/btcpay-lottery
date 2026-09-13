@@ -1044,7 +1044,9 @@ async function post(url, body){
 }
 
 function renderDraw(d){
-  const box = $('draw'); box.replaceChildren();
+  const box = $('draw');
+  const verifyOpen = !!box.querySelector('#verify-details')?.open;  // keep it open across refreshes
+  box.replaceChildren();
   if (d.phase === 'sales') return;
 
   if (d.commitment){
@@ -1077,7 +1079,7 @@ function renderDraw(d){
       if (pr.claimed) row.append(el('div','Claimed.','claimed'));
       p.append(row);
     }
-    const det = el('details'); det.append(el('summary','Verify the draw'));
+    const det = el('details'); det.id = 'verify-details'; det.open = verifyOpen; det.append(el('summary','Verify the draw'));
     det.append(el('div', `Block ${w.block_height} — ${w.block_hash}`, 'mono'));
     for (const pr of w.prizes){
       det.append(el('div', `Round ${pr.prize} (${pr.label}): index ${pr.index} of ${pr.pool_size} remaining`, 'sub'));
