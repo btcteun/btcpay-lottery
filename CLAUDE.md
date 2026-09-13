@@ -26,9 +26,13 @@ Single-file Flask app (`app.py`), state in one JSON file, runs in Docker.
    On-chain payments are not supported for this reason.
 
 3. **Fairness = future block hash.** Nobody (including the organizer) can
-   predict a block hash. Rule: the *first block with timestamp >= END_TIME*.
-   Before that block exists the ticket list is frozen and its SHA-256 is
-   published (commitment). Anyone can replay the draw with any node.
+   predict a block hash. Rule (since 2026-09-13): at END_TIME read the chain
+   tip height H and commit to **block H+1** (`commitment.draw_block_height`,
+   `tip_height_at_close`). The earlier rule "first block with timestamp >=
+   END_TIME" was dropped after two blocks arrived within one 20 s poll and the
+   tip-only poller took the second one. Before the target block exists the
+   ticket list is frozen and its SHA-256 is published (commitment). Anyone
+   can replay the draw with any node.
 
 4. **Multiple prizes** are drawn from the *same* block:
    `prize n = SHA256(blockhash + "," + frozen_sorted_list + "," + n) mod remaining`.
@@ -112,8 +116,11 @@ Single-file Flask app (`app.py`), state in one JSON file, runs in Docker.
   cryptographic proof like the preimage. Anyone who sees the buyer's wallet
   memo or checkout page could learn it. Acceptable for a small in-person
   event; the preimage path stays in for funding sources that return one.
-- Block timestamps are miner-set and can drift; a fixed block height would be
-  stricter. Timestamp rule was chosen for usability ("first block after close").
+- Drawing block = tip at close + 1. If the block API lags at END_TIME the
+  recorded tip can be one behind, making the target a block that already
+  exists for a few seconds; harmless because sales are closed by then. The
+  block is used as soon as it appears (no confirmation wait); a 1-block reorg
+  in that window could change the result.
 - `BLOCK_API` defaults to mempool.space (a trusted third party). Point it at
   your own node for real sovereignty.
 
@@ -156,7 +163,6 @@ Single-file Flask app (`app.py`), state in one JSON file, runs in Docker.
 ## Ideas not built yet
 
 - Webhooks instead of polling (BTCPay `InvoiceSettled` with signature check).
-- Fixed block height as an alternative rule (`DRAW_BLOCK_HEIGHT`).
 - Use the organizer's own node for block data.
 - Publish the commitment to Nostr automatically.
 - Per-buyer prize cap (currently a buyer with many tickets can win more than once).

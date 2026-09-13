@@ -16,7 +16,8 @@ No names, no email, no KYC — the participant's wallet is the proof.
    one invoice are numbered `ID-1`, `ID-2`, …
 3. At closing time the ticket list is frozen and its SHA-256 is published
    before the drawing block exists.
-4. The first Bitcoin block mined after closing time picks the winners.
+4. At closing time the current block height H is read and block H+1 is
+   announced as the drawing block, before it exists. Its hash picks the winners.
    For prize *n*: `SHA256(blockhash + "," + sorted ticket list + "," + n) mod remaining tickets`.
    The winning ticket leaves the pool, the buyer's other tickets stay in.
    `PRIZE_COUNT` sets how many prizes are drawn. `BACKUP_COUNT` extra rounds
@@ -79,8 +80,10 @@ for each event; old files stay as an audit trail.
   anyone who sees the buyer's wallet memo could learn it. Fine for a small
   in-person event. Backends like LNDhub do not return preimages at all.
   Publishing the commitment hash somewhere immutable (print, Nostr) keeps you honest.
-- Block timestamps are set by miners and can drift. For stricter fairness,
-  announce a fixed block height instead of a closing time.
+- The drawing block is fixed by height (tip at closing time + 1), not by
+  timestamp, so it does not depend on miner-set clocks or on polling timing.
+  The result is read as soon as that block appears; a one-block reorg right
+  then could in theory change it, so publish the winners after a few minutes.
 - Point `BLOCK_API` at your own node to remove the mempool.space dependency.
 
 ## License

@@ -22,7 +22,9 @@ HOW IT WORKS
    and have no verification code.
 3. When END_TIME passes, the ticket list is frozen and a commitment hash of
    the frozen list is published BEFORE the drawing block is known.
-4. The first Bitcoin block with a timestamp >= END_TIME decides the draw.
+4. When sales close the app reads the current chain tip height H and commits
+   to block H+1 as the drawing block (published with the list hash). It then
+   waits for exactly that height. Nobody can know that block's hash in advance.
    For prize n: SHA256(blockhash + frozen list + n) mod remaining tickets.
    The winning ticket leaves the pool; the buyer's other tickets stay in.
    PRIZE_COUNT sets how many prizes are drawn from that one block.
@@ -459,17 +461,26 @@ def block_info(height: int) -> dict:
     return {"height": height, "hash": h, "timestamp": info["timestamp"]}
 
 
-def wait_for_drawing_block(end_unix: int) -> dict:
-    """First block whose timestamp >= end_unix. Retries on network errors."""
-    seen = None
+def current_tip_height() -> int:
+    """Tip height at closing time; keeps retrying on network errors."""
     while True:
         try:
-            h = tip_height()
-            if h != seen:
-                seen = h
-                info = block_info(h)
-                if info["timestamp"] >= end_unix:
-                    return info
+            return tip_height()
+        except Exception as e:
+            print(f"[block] tip poll error: {e}")
+            time.sleep(POLL_INTERVAL_BLOCKS)
+
+
+def wait_for_drawing_block(height: int) -> dict:
+    """Wait until the block at exactly `height` exists and return it.
+    The target height is fixed and published when sales close (tip at close + 1),
+    so it does not matter how many blocks arrive between two polls."""
+    while True:
+        try:
+            return block_info(height)
+        except urllib.error.HTTPError as e:
+            if e.code != 404:  # 404 = block not mined yet
+                print(f"[block] poll error: {e}")
         except Exception as e:
             print(f"[block] poll error: {e}")
         time.sleep(POLL_INTERVAL_BLOCKS)
@@ -556,8 +567,14 @@ def background_loop():
         return
     if phase == "drawing" and STATE.get("commitment"):
         # Restarted while waiting for the block: keep the frozen list, just finish the draw.
-        print("[draw] resuming: list already frozen, waiting for the drawing block")
-        _finish_draw(all_ticket_ids(STATE))
+        target = STATE["commitment"].get("draw_block_height")
+        if target is None:  # state file from before the fixed-height rule
+            target = current_tip_height() + 1
+            with _lock:
+                STATE["commitment"]["draw_block_height"] = target
+                _save(STATE)
+        print(f"[draw] resuming: list already frozen, waiting for block {target}")
+        _finish_draw(all_ticket_ids(STATE), target)
         return
     while time.time() < END_UNIX:
         if time.time() >= START_UNIX:
@@ -565,6 +582,8 @@ def background_loop():
         time.sleep(POLL_INTERVAL_INVOICES)
 
     sync_invoices()  # final sweep for invoices created before END_TIME
+    tip = current_tip_height()
+    target = tip + 1
     with _lock:
         tickets = all_ticket_ids(STATE)
         STATE["phase"] = "drawing"
@@ -573,25 +592,27 @@ def background_loop():
             "prize_count": PRIZE_COUNT,
             "backup_count": BACKUP_COUNT,
             "sha256_of_ticket_list": commitment_of(tickets),
-            "rule": "first Bitcoin block with timestamp >= END_TIME; round n = "
-                    "SHA256(blockhash,list,n) mod remaining tickets, drawn ticket removed; "
+            "tip_height_at_close": tip,
+            "draw_block_height": target,
+            "rule": f"drawing block = height {target} (chain tip {tip} at END_TIME, plus one); "
+                    "round n = SHA256(blockhash,list,n) mod remaining tickets, drawn ticket removed; "
                     f"rounds 1-{PRIZE_COUNT} are prizes, later rounds are backups in order",
             "end_time": END_TIME,
         }
         _save(STATE)
-    print(f"[draw] sales closed, {len(tickets)} tickets frozen, commitment published")
+    print(f"[draw] sales closed, {len(tickets)} tickets frozen, tip {tip}, drawing block will be {target}")
 
-    _finish_draw(tickets)
+    _finish_draw(tickets, target)
 
 
-def _finish_draw(tickets: list):
+def _finish_draw(tickets: list, target_height: int):
     if not tickets:
         with _lock:
             STATE["phase"] = "no_entries"
             _save(STATE)
         return
 
-    blk = wait_for_drawing_block(int(END_UNIX))
+    blk = wait_for_drawing_block(target_height)
     drawn = draw(tickets, blk["hash"], PRIZE_COUNT, BACKUP_COUNT)
     winners = [d for d in drawn if "backup" not in d]
     backups = [d for d in drawn if "backup" in d]
@@ -1001,7 +1022,8 @@ PAGE = HEAD + r"""<body>
     <li>When sales close, the list of all ticket numbers is frozen and sorted in plain byte order
         (digits first, then capital letters, then lower-case letters; case matters).
         Its SHA-256 hash is published here before the drawing block exists, so the list cannot be changed afterwards.</li>
-    <li>The drawing block is the first Bitcoin block with a timestamp at or after the closing time.
+    <li>At closing time the current Bitcoin block height H is read and the drawing block is fixed to
+        height H+1. That height is published together with the list hash, before the block exists.
         Nobody can predict its hash.</li>
     <li>Round n picks one ticket: SHA-256 of the text <code>blockhash,ticket1,ticket2,…,n</code>
         (block hash, then the sorted list, then the round number, all joined with commas) is read as a number
@@ -1035,7 +1057,7 @@ function renderDraw(d){
   }
   if (d.phase === 'drawing'){
     const p = el('section', null, 'panel');
-    p.append(el('h2','Waiting for the next block'));
+    p.append(el('h2', d.commitment && d.commitment.draw_block_height ? `Waiting for block ${d.commitment.draw_block_height}` : 'Waiting for the next block'));
     p.append(el('div','Miners are picking the winner…','pulse'));
     box.append(p);
   }
