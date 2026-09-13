@@ -950,7 +950,10 @@ HEAD = r"""<!doctype html>
   .ok{color:var(--green)} .bad{color:var(--orange)}
   details{margin-top:18px}
   summary{cursor:pointer;color:var(--muted);font-size:14px}
-  footer{max-width:720px;margin:0 auto;padding:0 20px 40px;color:var(--muted);font-size:13px}
+  footer{max-width:720px;margin:0 auto;padding:0 20px 40px;color:var(--muted);font-size:13px;line-height:1.5}
+  footer ol{padding-left:20px;margin:8px 0 0}
+  footer li{margin-bottom:6px}
+  footer code{font-family:monospace;color:var(--txt)}
   @media (prefers-reduced-motion:no-preference){.pulse{animation:p 2s ease-in-out infinite}}
   @keyframes p{50%{opacity:.4}}
 </style>
@@ -1009,9 +1012,20 @@ PAGE = HEAD + r"""<body>
 </main>
 
 <footer>
-  Provably fair: the ticket list is frozen and its SHA-256 published before the drawing block exists.
-  Round n = SHA256(blockhash + "," + sorted ticket list + "," + n) mod remaining tickets; each drawn ticket leaves the pool.
-  The first rounds are the prizes, the following rounds are backup tickets in order, used only if a winner does not show up. Check it yourself with any node.
+  <strong>How the draw works — check it yourself with any Bitcoin node.</strong>
+  <ol>
+    <li>When sales close, the list of all ticket numbers is frozen and sorted in plain byte order
+        (digits first, then capital letters, then lower-case letters; case matters).
+        Its SHA-256 hash is published here before the drawing block exists, so the list cannot be changed afterwards.</li>
+    <li>The drawing block is the first Bitcoin block with a timestamp at or after the closing time.
+        Nobody can predict its hash.</li>
+    <li>Round n picks one ticket: SHA-256 of the text <code>blockhash,ticket1,ticket2,…,n</code>
+        (block hash, then the sorted list, then the round number, all joined with commas) is read as a number
+        and divided by the number of tickets still in the pool; the remainder is the position of the winning ticket in the pool.</li>
+    <li>The drawn ticket leaves the pool; other tickets of the same buyer stay in. The next round uses the same
+        frozen list in the hash, only the pool shrinks.</li>
+    <li>The first rounds are the prizes in order. Further rounds draw backup tickets, used only if a winner does not show up.</li>
+  </ol>
 </footer>
 
 <script>
