@@ -1,0 +1,19 @@
+services:
+  lottery:
+    build: .
+    container_name: lottery
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Filename comes from .env (DATA_FILENAME); the folder is always /data in the container
+      DATA_FILE: /data/${DATA_FILENAME:-lottery_data.json}
+    volumes:
+      - ./data:/data
+    # Only expose on localhost; put Caddy/nginx (HTTPS) in front.
+    ports:
+      - "127.0.0.1:5000:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:5000/api/status',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
