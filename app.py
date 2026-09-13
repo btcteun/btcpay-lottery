@@ -85,6 +85,9 @@ ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 TICKET_MODE = os.environ.get("TICKET_MODE", "invoice").lower()
 TICKET_SALT = os.environ.get("TICKET_SALT", "")
 
+# Cloudflare (and similar) block Python's default urllib User-Agent (error 1010).
+USER_AGENT = "btcpay-lottery/1.0"
+
 POLL_INTERVAL_INVOICES = 15
 POLL_INTERVAL_BLOCKS = 20
 BLOCK_API = os.environ.get("BLOCK_API", "https://mempool.space/api")
@@ -165,7 +168,7 @@ def _btcpay_get(path: str, params: dict = None):
     url = f"{BTCPAY_URL}{path}"
     if params:
         url += "?" + urllib.parse.urlencode(params, doseq=True)
-    req = urllib.request.Request(url, headers={"Authorization": f"token {BTCPAY_API_KEY}"})
+    req = urllib.request.Request(url, headers={"Authorization": f"token {BTCPAY_API_KEY}", "User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read().decode())
 
@@ -174,7 +177,7 @@ def _btcpay_post(path: str, body: dict):
     req = urllib.request.Request(
         f"{BTCPAY_URL}{path}",
         data=json.dumps(body).encode(),
-        headers={"Authorization": f"token {BTCPAY_API_KEY}", "Content-Type": "application/json"},
+        headers={"Authorization": f"token {BTCPAY_API_KEY}", "Content-Type": "application/json", "User-Agent": USER_AGENT},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=15) as r:
@@ -317,7 +320,8 @@ def sync_invoices():
 
 
 def _get(url: str):
-    with urllib.request.urlopen(url, timeout=15) as r:
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=15) as r:
         return r.read().decode().strip()
 
 
@@ -851,8 +855,13 @@ async function refresh(){
   $('buy-count').max = d.max_per_invoice;
   updateTotal();
   const labels = {sales:'Sales open', drawing:'Drawing', winner:'Winner announced', no_entries:'No entries'};
-  const ph = $('phase'); ph.textContent = labels[d.phase] || d.phase;
-  ph.className = 'phase ' + (d.phase==='sales'?'live':d.phase==='winner'?'done':'');
+  const fmt = iso => new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  let label = labels[d.phase] || d.phase;
+  if (d.phase === 'sales' && !d.sales_open){
+    label = Date.now() < new Date(d.start_time).getTime() ? `Sales open at ${fmt(d.start_time)}` : 'Sales closed';
+  }
+  const ph = $('phase'); ph.textContent = label;
+  ph.className = 'phase ' + (d.sales_open?'live':d.phase==='winner'?'done':'');
   $('count').textContent = d.tickets.length;
   $('window').textContent = `${d.ticket_price_sats} sats per ticket · ${d.start_time} → ${d.end_time}`;
   $('tickets').replaceChildren(...d.tickets.map(t => el('div', t)));
