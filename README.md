@@ -54,6 +54,14 @@ for each event; old files stay as an audit trail.
   `app.py` if needed.
 - Confirm BTCPay's public receipt page does not expose the preimage.
 - Set `PUBLIC_URL` to the HTTPS address of this page (used for the redirect).
+- Behind Caddy/nginx set `TRUST_PROXY=1`, otherwise all visitors share the
+  proxy's IP and one rate-limit bucket. Minimal Caddyfile:
+
+  ```
+  lottery.example.com {
+      reverse_proxy 127.0.0.1:8000
+  }
+  ```
 - Give the API key `canviewinvoices` and `cancreateinvoice` permissions.
 - Set `TICKET_PRICE_SATS` to exactly what your POS charges. Tickets must be
   priced in SATS or BTC.

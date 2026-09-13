@@ -123,6 +123,8 @@ Single-file Flask app (`app.py`), state in one JSON file, runs in Docker.
 - Keep it one file, one process, one JSON state file. Don't add a database
   unless there's a real reason.
 - Every admin endpoint: `hmac.compare_digest` + `_rate_limited`.
+- Rate limits key on `request.remote_addr`; behind a proxy that is only
+  meaningful with `TRUST_PROXY=1` (werkzeug ProxyFix, one hop).
 - Never put a preimage in `/api/status` or in anything rendered publicly.
 - Any change to the draw formula is a **breaking change for verifiability**:
   update the docstring in `draw()`, the footer text in the page, README, and

@@ -63,6 +63,7 @@ from collections import defaultdict
 from datetime import datetime
 
 from flask import Flask, abort, jsonify, render_template_string, request, send_file
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # ---------------------------------------------------------------------------
 # CONFIG — set via environment variables (never hardcode secrets in the file)
@@ -115,6 +116,11 @@ POLL_INTERVAL_BLOCKS = 20
 BLOCK_API = os.environ.get("BLOCK_API", "https://mempool.space/api")
 
 DATA_FILE = os.environ.get("DATA_FILE", "lottery_data.json")
+
+# Behind a reverse proxy (Caddy/nginx) the client IP arrives in X-Forwarded-For.
+# TRUST_PROXY=1 means exactly one trusted proxy in front; without it every
+# visitor would share the proxy's IP and therefore one rate-limit bucket.
+TRUST_PROXY = int(os.environ.get("TRUST_PROXY", "0"))
 
 if not ADMIN_TOKEN:
     raise SystemExit("Set ADMIN_TOKEN (e.g. `python3 -c 'import secrets;print(secrets.token_hex(32))'`).")
@@ -602,6 +608,8 @@ def _finish_draw(tickets: list):
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__)
+if TRUST_PROXY:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=TRUST_PROXY, x_proto=TRUST_PROXY, x_host=TRUST_PROXY)
 
 # Very small in-memory rate limiter for admin endpoints: 10 attempts / 10 min / IP
 _attempts = defaultdict(list)
