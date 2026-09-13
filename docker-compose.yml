@@ -12,7 +12,7 @@ services:
     # Only expose on localhost; put Caddy/nginx (HTTPS) in front.
     # Host port 8000: macOS AirPlay Receiver already listens on 5000 and answers 403.
     ports:
-      - "127.0.0.1:8000:5000"
+      - "127.0.0.1:8004:5000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:5000/api/status',timeout=3)"]
       interval: 30s
