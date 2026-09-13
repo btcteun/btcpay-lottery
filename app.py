@@ -51,6 +51,7 @@ CHECK BEFORE GOING LIVE
 
 import hashlib
 import hmac
+from decimal import Decimal, InvalidOperation
 import json
 import os
 import secrets
@@ -327,17 +328,20 @@ def fetch_invoice_preimage(invoice_id: str):
 
 def ticket_count_from_invoice(inv: dict) -> int:
     """Derive ticket count from amount paid, in sats. Never trust metadata."""
-    amount = float(inv.get("amount", 0))
+    try:
+        amount = Decimal(str(inv.get("amount", 0)))
+    except InvalidOperation:
+        return 0
     currency = (inv.get("currency") or "").upper()
     if currency == "SATS":
         sats = amount
     elif currency == "BTC":
-        sats = amount * 100_000_000
+        sats = amount * 100_000_000  # Decimal: exact, no float rounding (0.00000029 BTC = 29 sats)
     else:
         # Fiat-priced tickets: convert via your own fixed rule, or price in SATS.
         # Refusing here is safer than guessing.
         return 0
-    count = int(sats // TICKET_PRICE_SATS)
+    count = int(sats.to_integral_value(rounding="ROUND_HALF_UP") // TICKET_PRICE_SATS)
     return max(0, min(count, MAX_TICKETS_PER_INVOICE))
 
 
@@ -387,6 +391,9 @@ def ingest_invoice(inv: dict) -> bool:
     with _lock:
         if STATE["phase"] != "sales":
             return False
+        if inv_id in STATE["invoices"]:
+            # Poller and the buyer's redirect check raced; the first writer wins.
+            return True
         tid, code = _resolve_ticket_id(STATE, inv)
         STATE["invoices"][inv_id] = {
             "ticket_id": tid,
@@ -616,7 +623,7 @@ _attempts = defaultdict(list)
 
 
 def _rate_limited(ip: str, limit=10, window=600) -> bool:
-    """Per endpoint + client IP, so a buyer's lookups don't eat the organizer's verify budget."""
+    """Per endpoint + client IP, so buyers' calls don't eat the organizer's verify budget."""
     key = f"{request.endpoint}:{ip}"
     now = time.time()
     _attempts[key] = [t for t in _attempts[key] if now - t < window]
@@ -770,21 +777,6 @@ def api_my_tickets():
         with _lock:
             return jsonify({"status": "settled", "tickets": STATE["invoices"][inv_id]["ticket_ids"]})
     return jsonify({"status": inv.get("status", "pending").lower()})
-
-
-@app.route("/api/lookup", methods=["POST"])
-def api_lookup():
-    """Buyer enters the ticket ID from their wallet memo to see their ticket numbers."""
-    if _rate_limited(request.remote_addr, limit=30):
-        return jsonify({"error": "too many requests"}), 429
-    tid, _ = split_order_id(str((request.get_json(silent=True) or {}).get("ticket_id", "")))
-    if not tid:
-        return jsonify({"error": "a ticket ID is 7 letters/digits (case matters)"}), 400
-    with _lock:
-        inv = next((o for o in STATE["invoices"].values() if o.get("ticket_id") == tid), None)
-    if not inv:
-        return jsonify({"error": "no paid tickets found for that ID"}), 404
-    return jsonify({"tickets": inv["ticket_ids"]})
 
 
 @app.route("/api/verify", methods=["POST"])
@@ -997,14 +989,6 @@ PAGE = HEAD + r"""<body>
     <div class="big" id="count">–</div>
     <div class="sub" id="window"></div>
     <div class="tickets" id="tickets"></div>
-    <details id="lookup">
-      <summary>Find my ticket number</summary>
-      <label>Your ticket ID (the memo on the payment in your wallet, e.g. Kq7zR2x-48213 → Kq7zR2x)
-        <input id="lookup-id" autocomplete="off" spellcheck="false" autocapitalize="off" maxlength="13">
-      </label>
-      <button class="ghost" id="lookup-btn">Look up</button>
-      <div class="result" id="lookup-result"></div>
-    </details>
   </section>
 
   <section id="draw"></section>
@@ -1139,12 +1123,6 @@ async function refresh(){
   renderDraw(d);
 }
 
-$('lookup-btn').onclick = async () => {
-  const {ok, data} = await post('/api/lookup', {ticket_id: $('lookup-id').value});
-  const r = $('lookup-result');
-  r.textContent = ok ? 'Your tickets: ' + data.tickets.join(', ') : (data.error || 'Not found');
-  r.className = 'result ' + (ok ? 'ok' : 'bad');
-};
 refresh(); setInterval(refresh, 5000);
 if (myInvoice){ checkMyTickets(); myPollTimer = setInterval(checkMyTickets, 3000); }
 </script>

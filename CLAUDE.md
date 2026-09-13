@@ -143,7 +143,10 @@ Single-file Flask app (`app.py`), state in one JSON file, runs in Docker.
   answers 403 whenever the container is down or the browser uses `localhost`
   (IPv6). Outbound requests must send a non-default User-Agent; Cloudflare in
   front of the BTCPay host blocks urllib's default one (error 1010).
-- Whether BTCPay's public receipt page exposes the preimage.
+- BTCPay's public receipt page shows the orderId, i.e. the verification code.
+  Invoice IDs are never published, so only the buyer's own redirect URL leads
+  there; still, disable receipts on the store. (Whether it also exposes the
+  preimage is moot with LNDhub.)
 - BTCPay occasionally reports a settled Lightning payment with
   `additionalData.preimage: null` (seen 2026-09-13, invoice 5JYQ…). Such
   invoices are registered with `preimage: null`, retried every poll, and
